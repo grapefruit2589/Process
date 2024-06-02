@@ -16,7 +16,7 @@ using namespace std;
 bool running = true;
 int simulated_time = 0;
 mutex mtx;
-bool dqMonitorRequested = false; // Àü¿ª º¯¼ö·Î ¼±¾ğ
+bool dqMonitorRequested = false; // ì „ì—­ ë³€ìˆ˜ë¡œ ì„ ì–¸
 
 class DynamicQueue {
 public:
@@ -172,7 +172,7 @@ OPTION parse_option(char** args)
                 option.y = stoi(args[i+1]);
                 i++;
             }
-            // -n, -d, -p, -m Ã³¸® 
+            // -n, -d, -p, -m ì²˜ë¦¬ 
             else if (string(args[i]) == "-n" && strlen(args[i + 1]) != 0) {
                 option.n = stoi(args[i + 1]);
                 ++i;
@@ -185,7 +185,7 @@ OPTION parse_option(char** args)
                 option.p = stoi(args[i + 1]);
                 ++i;
             }
-            else if (string(args[i]) == "-m" && strlen(args[i + 1]) != 0) { //sum ¸í·É¿¡¸¸ »ç¿ë
+            else if (string(args[i]) == "-m" && strlen(args[i + 1]) != 0) { //sum ëª…ë ¹ì—ë§Œ ì‚¬ìš©
                 option.m = stoi(args[i + 1]);
                 ++i;
             }
@@ -204,7 +204,7 @@ void exec(char** args, DynamicQueue& dq) {
         string message;
         int period = 0;
         int duration = 0;
-        int numProcess = 1; // ½ÇÁ¦´Â ½º·¹µå
+        int numProcess = 1; // ì‹¤ì œëŠ” ìŠ¤ë ˆë“œ
 
         for (int i = 1; strlen(args[i]) != 0; ++i)
         {
@@ -228,11 +228,11 @@ void exec(char** args, DynamicQueue& dq) {
         // Execute echo command with specified parameters
         if (!message.empty()) {
             for (int i = 0; i < numProcess; ++i) {
-                thread([message, period, duration, i]() {  // ÇÁ·Î¼¼½º ´ë½Å ½º·¹µå·Î ±¸Çö
+                thread([message, period, duration, i]() {  // í”„ë¡œì„¸ìŠ¤ ëŒ€ì‹  ìŠ¤ë ˆë“œë¡œ êµ¬í˜„
                     int timeElapsed = 0;
                     int count = 0;
                     while (running && (duration == 0 || timeElapsed < duration)) {
-                        if (count == period) { // period¸¶´Ù Ãâ·Â 
+                        if (count == period) { // periodë§ˆë‹¤ ì¶œë ¥ 
                             //lock_guard<mutex> lock(mtx);
                             mtx.lock();
                             cout << "Process(Thread) " << i << ": ";
@@ -251,7 +251,7 @@ void exec(char** args, DynamicQueue& dq) {
 
             if (duration > 0) {
                 //this_thread::sleep_for(chrono::seconds(duration));
-                Sleep(duration*1000);  // ÇÁ·Î¼¼½º Á¾·á¸¦ À§ÇØ ´ë±â½Ã°£ÀÌ ÇÊ¿ä
+                Sleep(duration*1000);  // í”„ë¡œì„¸ìŠ¤ ì¢…ë£Œë¥¼ ìœ„í•´ ëŒ€ê¸°ì‹œê°„ì´ í•„ìš”
                 running = false; // Set running to false to stop threads
             }
         }
@@ -263,7 +263,7 @@ void exec(char** args, DynamicQueue& dq) {
                     int timeElapsed = 0;
                     int count = 0;
                     while (running && (duration == 0 || timeElapsed <= duration)) {
-                        if (count == period) { // period¸¶´Ù Ãâ·Â 
+                        if (count == period) { // periodë§ˆë‹¤ ì¶œë ¥ 
                             mtx.lock();
                              cout << "Process(Thread) " << i << ": ";
                             executeEcho(message);
@@ -332,14 +332,14 @@ void exec(char** args, DynamicQueue& dq) {
             // cout << numThreads  << endl;
             // cout << numProcess << endl;
             for (int i = 0; i < numProcess; ++i) {
-                thread([x, numThreads, i]() {  // ÇÁ·Î¼¼½º ´ë½Å ½º·¹µå·Î ±¸Çö
+                thread([x, numThreads, i]() {  // í”„ë¡œì„¸ìŠ¤ ëŒ€ì‹  ìŠ¤ë ˆë“œë¡œ êµ¬í˜„
                     mtx.lock();
                     cout << "Process(Thread) " << i << ": ";
                     executeSum(x, numThreads);
                     mtx.unlock();
                       }).detach();
             }
-            Sleep(1000);  // ÇÁ·Î¼¼½º Á¾·á¸¦ À§ÇØ ´ë±â½Ã°£ÀÌ ÇÊ¿ä
+            Sleep(1000);  // í”„ë¡œì„¸ìŠ¤ ì¢…ë£Œë¥¼ ìœ„í•´ ëŒ€ê¸°ì‹œê°„ì´ í•„ìš”
             running = false;
         }
     }
@@ -358,7 +358,7 @@ void shell(const string& filename, DynamicQueue& dq) {
 
         if (dqMonitorRequested) {
             cout << "Dynamic Queue size: " << dq.size() << endl;
-            dqMonitorRequested = false; // Å¥ Å©±â È®ÀÎ ÈÄ º¯¼ö ÃÊ±âÈ­
+            dqMonitorRequested = false; // í í¬ê¸° í™•ì¸ í›„ ë³€ìˆ˜ ì´ˆê¸°í™”
         }
     }
     file.close();
