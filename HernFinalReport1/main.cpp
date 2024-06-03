@@ -1,84 +1,108 @@
+//2-1 : Dynamic Queueing 미완성
+//2-2 : Alarm Clock 부분 완성(shell 완성, monitor 미완성)
+//2-3 : CLI 완성(&처리, commands(echo, dummy, gcd, prime, sum), option(-n, -d, -p, -m))
+// 전체적으로 Dynamic Queueing 처리 대신에 주신 예제 1의 mutext를 사용하여 구현하였습니다. 
+// 최종 수정완료
+
 #include <iostream>
 #include <fstream>
-#include <sstream>
-#include <vector>
 #include <thread>
 #include <mutex>
+#include <vector>
+#include <string>
+#include <sstream>
 #include <chrono>
-#include <condition_variable>
-#include <queue>
-#include <cmath>
-#include <cstring>
+#include <atomic>
 #include <windows.h>
-//2번째 수정
+
 using namespace std;
+atomic<int> pid(0); // 프로세스 id
 
-// 전역 변수로 선언
 
-bool running = true;
-int simulated_time = 0;
-mutex mtx;
-bool dqMonitorRequested = false; 
-int pid = 0; // process id
-
-class DynamicQueue {
-public:
-    DynamicQueue(size_t maxSize) : maxSize(maxSize) {}
-
-    void enqueue(const string& command) {
-        unique_lock<mutex> lock(mtx);
-        while (queue.size() >= maxSize) {
-            cv.wait(lock);
-        }
-        queue.push(command);
-        cv.notify_all();
-    }
-
-    string dequeue() {
-        unique_lock<mutex> lock(mtx);
-        while (queue.empty()) {
-            cv.wait(lock);
-        }
-        string command = queue.front();
-        queue.pop();
-        cv.notify_all();
-        return command;
-    }
-
-    size_t size() {
-        unique_lock<mutex> lock(mtx);
-        return queue.size();
-    }
-
-private:
-    size_t maxSize;
-    queue<string> queue;
-    mutex mtx;
-    condition_variable cv;
+// 프로세스 옵션정보 
+struct OPTION {
+    string cmd;
+    string message;   //  출력 메시지, e.g echo
+    int process_type; // 0: BG(background process),  1: FG(foreground process)
+    int x, y;   // 명령의 인수
+    int n;  // 같은 명령을 실행하는 프로세스 x 개 생성
+    int d;  // 실행 시간이 x 를 넘으면 프로세스 종료 (duration).
+    int p;  // 같은 작업을 x 초마다 반복 (period)
+    int m;  // 데이터를 x 개로 분할해서 병렬 처리 (multithread) : (sum 명령에만 사용)
 };
 
-void executeEcho(const string& str) {
-    cout << str << endl;
-}
+// 명령어 옵션 해석
+OPTION parse_option(const vector<string>& args) {
+    OPTION option = { "", "", 1, 0, 0, 1, 1, 1, 0 }; // 디폴트 
+    
+    //BG, FG 체크
+    option.process_type = (args[0][0] == '&') ?  0: 1;
+    if(option.process_type == 0) // &
+        option.cmd = args[0].substr(1, args[0].length());
+    else
+        option.cmd = args[0];
 
-void executeDummy() {
-    // Dummy process does nothing
-    //cout << "dummy" << endl;
-}
-
-void executeGCD(int x, int y) {
-    auto gcd = [](int a, int b) {
-        while (b != 0) {
-            int t = b;
-            b = a % b;
-            a = t;
+    for (size_t i = 1; i < args.size(); ++i) {
+        if (option.cmd == "echo" && i == 1) {
+            option.message = args[i];
         }
-        return a;
-        };
-    cout << "GCD(" << x << " ," << y << "):" << gcd(x, y) << endl;
+        else if ((option.cmd == "sum" || option.cmd == "prime") && i == 1) {
+            option.x = stoi(args[i]);
+        }
+        else if (option.cmd == "gcd" && i == 1) {
+            option.x = stoi(args[i]);
+            if (i + 1 < args.size()) {
+                option.y = stoi(args[i + 1]);
+                ++i;
+            }
+        }
+        // -n, -d, -p, -m 처리 
+        else if (args[i] == "-n" && i + 1 < args.size()) {
+            option.n = stoi(args[i + 1]);
+            ++i;
+        }
+        else if (args[i] == "-d" && i + 1 < args.size()) {
+            option.d = stoi(args[i + 1]);
+            ++i;
+        }
+        else if (args[i] == "-p" && i + 1 < args.size()) {
+            option.p = stoi(args[i + 1]);
+            ++i;
+        }
+        else if (args[i] == "-m" && i + 1 < args.size()) {
+            option.m = stoi(args[i + 1]);
+            ++i;
+        }
+    }
+    return option;
 }
 
-void executePrime(int x) {
+// echo 명령 실행
+void executeEcho(const string& message, int pid, int n, int process_type) {
+    cout << pid << ((process_type == 0) ?  "B": "F") << "(" << n << "): " << message << endl;
+}
+
+// sum 명령 실행
+void executeSum(int x, int numThreads, int pid, int n, int process_type) {
+    int sum = 0;
+    for (int i = 1; i <= numThreads; ++i) {
+        sum += x * i;
+    }
+    cout << pid << ((process_type == 0) ? "B" : "F") << "(" << n << "): " << " Sum: " << sum << endl;
+}
+
+// gcd 명령 실행
+void executeGCD(int x, int y, int pid, int n, int process_type) {
+    while (y != 0) {
+        int temp = y;
+        y = x % y;
+        x = temp;
+    }
+    cout << pid << ((process_type == 0) ? "B" : "F") <<"(" << n << "): " << ": GCD: " << x << endl;
+}
+
+// prime 명령 실행
+void executePrime(int x, int pid, int n, int process_type) {
     auto countPrimes = [](int x) {
         vector<bool> is_prime(x + 1, true);
         is_prime[0] = is_prime[1] = false;
@@ -91,301 +115,182 @@ void executePrime(int x) {
         }
         return count(is_prime.begin(), is_prime.end(), true);
         };
-    cout << "Count PRIME(" << x << "):" << countPrimes(x) << endl;
+    cout << pid << ((process_type == 0) ? "B" : "F") << "(" << n << "): " << "prime count(" << x << "):" << countPrimes(x) << endl;
 }
 
-void executeSum(int x, int numThreads) {
-    auto sum = [](int start, int end) {
-        long long result = 0;
-        for (int i = start; i <= end; ++i) {
-            result = (result + i) % 1000000;
-        }
-        return result;
-        };
-
-    vector<thread> threads;
-    vector<long long> results(numThreads);
-    int chunkSize = x / numThreads;
-
-    for (int i = 0; i < numThreads; ++i) {
-        int start = i * chunkSize + 1;
-        int end = (i == numThreads - 1) ? x : (i + 1) * chunkSize;
-        threads.emplace_back([i, start, end, &results, sum]() {
-            results[i] = sum(start, end);
-            });
-    }
-
-    for (auto& t : threads) {
-        t.join();
-    }
-
-    long long totalSum = 0;
-    for (const auto& res : results) {
-        totalSum = (totalSum + res);
-    }
-    totalSum = totalSum % 1000000;
-    cout << "Sum " << x << " % 1,000,000 :" << totalSum << endl;
+// dummy 명령 실행
+void executeDummy(int pid, int n, int process_type) {
+    cout << pid << ((process_type == 0) ? "B" : "F") << "(" << n << "): " << ": Dummy" << endl;
 }
 
-char** parse(const char* command) {
-    vector<string> tokens;
-    stringstream ss(command);
-    string token;
-    while (ss >> token) {
-        tokens.push_back(token);
-    }
+// 명령과 옵션을 분석하여 실행
+void exec(const vector<string>& args) {
+    static mutex mtx;
+    OPTION option = parse_option(args); // 명령 옵션 분석
+    int current_pid = ++pid;  // 프로세스 id 
 
-    char** args = new char* [tokens.size() + 1];
-    for (size_t i = 0; i < tokens.size(); ++i) {
-        args[i] = new char[tokens[i].size() + 1];
-        strcpy_s(args[i], tokens[i].size() + 1, tokens[i].c_str());
-    }
-    args[tokens.size()] = new char[1];
-    args[tokens.size()][0] = '\0';  // Null-terminate the array
+    string cmd = option.cmd;  // 명령어 
+    int process_type = option.process_type; // BG, FG 프로세스 구분
 
-    return args;
-}
-//
-typedef struct {
-    string  cmd;
-    string  message;  // for echo
-    int x, y;
-    int n;
-    int d;
-    int p;
-    int m;
-} OPTION;
-
-OPTION parse_option(char** args)
-{
-    OPTION  option = {"", "", 0, 0, 1, 1, 1, 0}; 
-    option.cmd = args[0];
-
-    for (int i = 1; strlen(args[i]) != 0; ++i) 
-    {
-            if (option.cmd == "echo" && i == 1) {
-                option.message = args[i];
-            }
-            else if (option.cmd == "sum" && i == 1) {
-                option.x = stoi(args[i]);
-            }
-            else if (option.cmd == "prime" && i == 1) {
-                option.x = stoi(args[i]);
-            }
-            else if (option.cmd == "gcd" && i == 1) {
-                option.x = stoi(args[i]);
-                option.y = stoi(args[i+1]);
-                i++;
-            }
-            // -n, -d, -p, -m 처리 
-            else if (string(args[i]) == "-n" && strlen(args[i + 1]) != 0) {
-                option.n = stoi(args[i + 1]);
-                ++i;
-            }
-            else if (string(args[i]) == "-d" && strlen(args[i + 1]) != 0) {
-                option.d = stoi(args[i + 1]);
-                ++i;
-            }
-            else if (string(args[i]) == "-p" && strlen(args[i + 1]) != 0) {
-                option.p = stoi(args[i + 1]);
-                ++i;
-            }
-            else if (string(args[i]) == "-m" && strlen(args[i + 1]) != 0) { //sum 명령에만 사용
-                option.m = stoi(args[i + 1]);
-                ++i;
-            }
-        }
-    return option;
-}
-
-void exec(char** args, DynamicQueue& dq) {
-
-    OPTION option = parse_option(args);
-    //cout << "option.cmd =  " << option.cmd << endl;
-    //cout << "option.message =  " << option.message << endl;
-    //cout << "option.x =  " << option.x << endl;
-    //cout << "option.y =  " << option.y << endl;
-    //cout << "option.n =  " << option.n << endl;
-    //cout << "option.d =  " << option.d << endl;
-    //cout << "option.p =  " << option.p << endl;
-    //cout << "option.m =  " << option.m << endl;
-
-    string cmd = option.cmd;
-    if (cmd == "echo") {
-        // Execute echo command with options
+    if (cmd == "echo") { // echo 명령 처리
         string message = option.message;
-        int period   = option.p;
+        int period = option.p;
         int duration = option.d;
-        int numProcess = option.n; // 실제는 스레드
+        int numProcess = option.n;
+        
 
         if (!message.empty()) {
-            for (int i = 0; i < numProcess; ++i) {
-                thread([message, period, duration, i]() {  // 프로세스 대신 스레드로 구현, i는 스레드 번호 
+            for (int n = 0; n < numProcess; ++n) {
+                thread([message, period, duration, n, current_pid, process_type]() {
                     int timeElapsed = 0;
                     int count = 0;
-                    while (running &&  timeElapsed <= duration) {
-                        if (count == period) { // period 마다 출력 
+
+                    while (timeElapsed <= duration) {
+                        if (count == period) {
                             //lock_guard<mutex> lock(mtx);
-                            mtx.lock();
-                            cout << "Process(Thread) " << i << ": ";
-                            executeEcho(message);
+                            mtx.lock(); // 뮤텍스로 스레드 순서화
+                            executeEcho(message, current_pid, n, process_type);
                             mtx.unlock();
                             count = 0;
                         }
-
-                        //this_thread::sleep_for(chrono::seconds(1));
-                        //Sleep(1000);
+                        this_thread::sleep_for(chrono::seconds(1));
                         timeElapsed++;
                         count++;
                     }
                     }).detach();
             }
-
             if (duration > 0) {
                 //this_thread::sleep_for(chrono::seconds(duration));
-                Sleep(option.d * 1000);  // 프로세스 종료를 위해 대기시간이 필요
-                running = false; // Set running to false to stop threads
+                Sleep(duration * 1000);
+
             }
         }
-
     }
-    else if (cmd == "sum") {
+    else if (cmd == "sum") { // sum 명령 처리
         int x = option.x;
-        int numThreads =  option.m;
+        int numThreads = option.m;
         int numProcess = option.n;
 
-        //cout << "option.x =  " << option.x << endl;
-        //cout << numThreads  << endl;
-        //cout << numProcess << endl;
-
-        for (int i = 0; i < numProcess; ++i) {
-            thread([x, numThreads, i]() {  // 프로세스 대신 스레드로 구현,  i는 스레드 번호
+        for (int n = 0; n < numProcess; ++n) {
+            thread([x, numThreads, current_pid, n, process_type]() {
                 mtx.lock();
-                cout << "Process(Thread) " << i << ": ";
-                executeSum(x, numThreads);
+                executeSum(x, numThreads, current_pid, n, process_type);
                 mtx.unlock();
                 }).detach();
         }
-        Sleep(1000);  // 프로세스 종료를 위해 대기시간이 필요
-        running = false;
+        this_thread::sleep_for(chrono::seconds(1));
     }
-    else if (cmd == "gcd") {
+    else if (cmd == "gcd") { // gcd 명령 처리
         int x = option.x;
         int y = option.y;
-
-        //int period = option.p;
-        //int duration = option.d;
         int numProcess = option.n;
 
-        //cout << "option.x =  " << option.x << endl;
-        //cout << numThreads  << endl;
-        //cout << numProcess << endl;
-
-        for (int i = 0; i < numProcess; ++i) {
-            thread([x, y, i]() {  // 프로세스 대신 스레드로 구현,  i는 스레드 번호
+        for (int n = 0; n < numProcess; ++n) {
+            thread([x, y, current_pid, n, process_type]() {
                 mtx.lock();
-                cout << "Process(Thread) " << i << ": ";
-                executeGCD(x, y);
+                executeGCD(x, y, current_pid, n, process_type);
                 mtx.unlock();
                 }).detach();
         }
-        Sleep(1000);  // 프로세스 종료를 위해 대기시간이 필요
-        running = false;
+        //this_thread::sleep_for(chrono::seconds(1));
+        Sleep(1000);
     }
-    else if (cmd == "prime") {
+    else if (cmd == "prime") { // prime 명령 처리
         int x = option.x;
-        
-
-        //int period = option.p;
-        //int duration = option.d;
         int numProcess = option.n;
 
-        //cout << "option.x =  " << option.x << endl;
-        //cout << numThreads  << endl;
-        //cout << numProcess << endl;
-
-        for (int i = 0; i < numProcess; ++i) {
-            thread([x, i]() {  // 프로세스 대신 스레드로 구현,  i는 스레드 번호
+        for (int n = 0; n < numProcess; ++n) {
+            thread([x, current_pid, n, process_type]() {
                 mtx.lock();
-                cout << "Process(Thread) " << i << ": ";
-                executePrime(x);
+                executePrime(x, current_pid, n, process_type);
                 mtx.unlock();
                 }).detach();
         }
-        Sleep(1000);  // 프로세스 종료를 위해 대기시간이 필요
-        running = false;
+        this_thread::sleep_for(chrono::seconds(1));
     }
-    else if (cmd == "dummy") {
-       
-        //int period = option.p;
-        //int duration = option.d;
+    else if (cmd == "dummy") { // dummy 명령 처리
         int numProcess = option.n;
 
-        for (int i = 0; i < numProcess; ++i) {
-            thread([i]() {  // 프로세스 대신 스레드로 구현,  i는 스레드 번호
+        for (int n = 0; n < numProcess; ++n) {
+            thread([current_pid, n, process_type]() {
+                //lock_guard<mutex> lock(mtx);
                 mtx.lock();
-                cout << "Process(Thread) " << i << ": ";
-                executeDummy();
+                executeDummy(current_pid, n, process_type);
                 mtx.unlock();
                 }).detach();
         }
-        Sleep(1000);  // 프로세스 종료를 위해 대기시간이 필요
-        running = false;
+        //this_thread::sleep_for(chrono::seconds(1));
+        Sleep(1000);
     }
-
 }
 
-void shell(const string& filename, DynamicQueue& dq) {
-    ifstream file(filename);
-    string line;
-    while (running && getline(file, line)) {
-        char** args = parse(line.c_str());
-        thread(exec, args, ref(dq)).detach();  // Create a detached thread to execute the command
-        {
-            lock_guard<mutex> lock(mtx);
-            simulated_time += 1;  // Increment simulated time by 1 second
-        }
+// line을 ';' 구분자로 분리하여 명령(commands) 생성
+vector<string> split_commands(const string& line) {
+    vector<string> commands;
+    istringstream stream(line);
+    string command;
+    while (getline(stream, command, ';')) {
+        commands.push_back(command);
+    }
+    return commands;
+}
 
-        if (dqMonitorRequested) {
-            cout << "Dynamic Queue size: " << dq.size() << endl;
-            dqMonitorRequested = false; // 큐 크기 확인 후 변수 초기화
+// 하나의 명령(command)을 공백으로 구분하여 args 생성
+vector<string> parse_args(const string& command) {
+    vector<string> args;
+    istringstream stream(command);
+    string arg;
+    while (stream >> arg) {
+        args.push_back(arg);
+    }
+    return args;
+}
+
+// 명령어 토큰을 분석하여 스레드(exec)로 실행
+void execute_command(const string& command) {
+    vector<string> args = parse_args(command); // 명령어 토큰 분석
+    if (!args.empty()) {
+        if (args[0][0] == '&') { //BG 프로세스
+            thread(exec, args).detach();
+        }
+        else {
+            exec(args);
+        }
+    }
+}
+
+// Shell 함수 구현: commands.txt에서 명령을 읽고 명령 실행
+void shell(const string& filename)
+{
+    ifstream file(filename); // 파일 개방
+    string line;
+    while (getline(file, line))
+    {
+        cout << "prompt> " << line << endl; // 프롬프트 출력 
+
+        vector<string> commands = split_commands(line); // 라인을 명령들로 분리
+        for (const string& command : commands) // 각 명령을 처리 
+        { 
+            execute_command(command);
+            if (command[0] != '&') {  // 백그라운드 프로세스이면, 포그라운드 대기
+                //this_thread::sleep_for(chrono::seconds(1)); 
+                Sleep(1000);
+
+            }
         }
     }
     file.close();
 }
 
-void monitor(DynamicQueue& dq)
-{
-    int last_checked_time = 0;
-
-    while (running) {
-        int current_time;
-        {
-            lock_guard<mutex> lock(mtx);
-            current_time = simulated_time;
-        }
-
-        if (current_time - last_checked_time >= 5) {
-            dqMonitorRequested = true; // 5
-            cout << "Dynamic Queue size: " << dq.size() << endl;
-            last_checked_time = current_time;
-        }
-
-        this_thread::sleep_for(chrono::milliseconds(1000));  // Small sleep to prevent busy waiting
-    }
-}
-
 int main()
 {
-    DynamicQueue dq(5);
+    // 스레드로 shell processes 시작 
+    thread shell_thread(shell, "commands.txt");
+    //thread monitor_thread(monitor, ref(dq));
 
-    // Start shell and monitor processes
-    thread shell_thread(shell, "commands.txt", ref(dq));
-    thread monitor_thread(monitor, ref(dq));
-
-    // Wait for threads to finish
+    // 스레드가 끝나길 대기
     shell_thread.join();
-    monitor_thread.join();
+    //monitor_thread.join(); // 완성 안됨 
 
     return 0;
 }
